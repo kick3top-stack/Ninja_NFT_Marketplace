@@ -9,7 +9,7 @@ import "@openzeppelin/contracts/token/common/ERC2981.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "hardhat/console.sol";
 
-contract NFTMarketplace {
+contract Marketplace {
     struct Listing {
         uint256 price;
         address seller;
