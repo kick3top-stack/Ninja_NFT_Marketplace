@@ -23,8 +23,7 @@ contract NFT is ERC721URIStorage, ERC2981, Ownable {
     constructor() ERC721("MyNFTCollection", "MNFT") Ownable(msg.sender) {
         tokenCounter = 0;
         console.log("log-----Deployed");
-        // Default royalty: 5% to contract owner
-        _setDefaultRoyalty(msg.sender, 500); // 500 = 5% (10000 denominator)
+        _setDefaultRoyalty(msg.sender, 500);
     }
 
     // -------------------------------
