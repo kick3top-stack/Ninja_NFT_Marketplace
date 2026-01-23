@@ -8,6 +8,7 @@ import { ProfilePage } from './components/ProfilePage';
 import { Navigation } from './components/Navigation';
 import { PreloadEffect } from './components/PreloadEffect';
 import { AlertModal } from './components/AlertModal';
+import { ethers } from 'ethers';
 
 export type NFT = {
   id: string;
@@ -223,14 +224,37 @@ function App() {
     }, 3000);
   }, []);
 
-  const connectWallet = () => {
-    // Mock wallet connection
-    setWallet('0x1234...5678');
-    showAlert('Wallet connected successfully!', 'success');
+  const connectWallet = async () => {
+    if (typeof window.ethereum === 'undefined') {
+      alert('MetaMask not detected. Please install MetaMask!');
+      return;
+    }
+
+    try {
+      const accounts = await window.ethereum.request({
+        method: 'eth_requestAccounts',
+      });
+
+      setWallet(accounts[0]);
+      showAlert('Wallet connected', 'success');
+    } catch (err) {
+      console.error('Wallet connection rejected', err);
+      showAlert('Error connecting to wallet.', 'error');
+    }
   };
 
   const disconnectWallet = () => {
     setWallet(null);
+
+  // Optional: clear cached permissions (MetaMask-supported)
+    if (window.ethereum?.request) {
+      window.ethereum.request({
+        method: 'wallet_revokePermissions',
+        params: [{ eth_accounts: {} }],
+      }).catch(() => {
+        // silently ignore
+      });
+    }
     showAlert('Wallet disconnected', 'success');
   };
 
@@ -289,8 +313,7 @@ function App() {
       <Navigation 
         currentPage={currentPage} 
         onNavigate={navigateTo}
-        wallet={wallet}
-        onConnectWallet={connectWallet}
+        context={appContext}
       />
       
       {currentPage === 'home' && <Home context={appContext} onNavigate={navigateTo} />}
