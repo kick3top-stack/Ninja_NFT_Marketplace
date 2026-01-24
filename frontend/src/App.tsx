@@ -269,7 +269,7 @@ function App() {
 
       if (auction && auction.endTime && !auction.ended) {
           highestBid = auction.highestBid ? parseFloat(ethers.formatEther(auction.highestBid)) : undefined;
-          auctionEndTime = new Date(auction.endTime * 1000); // Convert endTime (seconds) to Date
+          auctionEndTime = new Date(Number(auction.endTime) * 1000); // Convert endTime (seconds) to Date
           minBid = auction.minBid ? parseFloat(ethers.formatEther(auction.minBid)) : undefined;
       }
           
