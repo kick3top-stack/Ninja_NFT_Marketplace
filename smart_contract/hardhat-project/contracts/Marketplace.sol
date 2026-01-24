@@ -173,6 +173,11 @@ contract Marketplace {
         emit AuctionEnded(tokenAddress, tokenId, a.highestBidder, a.highestBid);
     }
 
+    // This function should be added to your smart contract to fetch auction details
+    function getAuction(address tokenAddress, uint256 tokenId) external view returns (Auction memory) {
+        return auctions[tokenAddress][tokenId];
+    }
+
     // -------------------------------
     // View listing
     // -------------------------------

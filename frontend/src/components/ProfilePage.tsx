@@ -33,10 +33,12 @@ export function ProfilePage({ context }: ProfilePageProps) {
   }
 
   // Get user's NFTs (including unlisted ones)
-  const ownedNFTs = context.nfts.filter(nft => nft.owner === context.wallet);
+  const ownedNFTs = context.nfts.filter(nft => nft.owner.toLowerCase() === context.wallet?.toLowerCase());
   const listedNFTs = ownedNFTs.filter(nft => nft.status === 'listed');
   const auctionNFTs = ownedNFTs.filter(nft => nft.status === 'auction');
   const unlistedNFTs = ownedNFTs.filter(nft => nft.status === 'unlisted');
+
+
 
   return (
     <div className="min-h-screen py-16 px-4">

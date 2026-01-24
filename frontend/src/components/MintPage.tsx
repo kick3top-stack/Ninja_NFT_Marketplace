@@ -2,6 +2,10 @@ import { useState } from 'react';
 import { Upload, X, Image as ImageIcon } from 'lucide-react';
 import { AppContextType } from '../App';
 import { CollectionSelectModal } from './CollectionSelectModal';
+import { uploadToIPFS } from '@/blockchain/utils/ipfs';
+import { uploadJSONToIPFS } from '@/blockchain/utils/ipfs';
+import { getNFTContract } from '@/blockchain/contracts/nftContract';
+import { ethers } from 'ethers';
 
 type MintPageProps = {
   context: AppContextType;
@@ -47,87 +51,132 @@ export function MintPage({ context }: MintPageProps) {
   };
 
   const handleMint = async () => {
-    if (!context.wallet) {
-      context.showAlert('Please connect your wallet first', 'error');
-      return;
-    }
+    // const nftContract = getNftContract();
 
-    if (!imageFile) {
-      context.showAlert('Please upload an image', 'error');
-      return;
-    }
+  if (!context.wallet) {
+    context.showAlert('Please connect your wallet first', 'error');
+    return;
+  }
 
-    if (!nftName.trim()) {
-      context.showAlert('Please enter NFT name', 'error');
-      return;
-    }
+  if (!imageFile) {
+    context.showAlert('Please upload an image', 'error');
+    return;
+  }
 
-    if (!nftDescription.trim()) {
-      context.showAlert('Please enter NFT description', 'error');
-      return;
-    }
+  if (!nftName.trim()) {
+    context.showAlert('Please enter NFT name', 'error');
+    return;
+  }
 
-    if (useExistingCollection && !selectedCollection) {
-      context.showAlert('Please select a collection', 'error');
-      return;
-    }
+  if (!nftDescription.trim()) {
+    context.showAlert('Please enter NFT description', 'error');
+    return;
+  }
 
-    if (!useExistingCollection && !newCollectionName.trim()) {
-      context.showAlert('Please enter collection name', 'error');
-      return;
-    }
+  if (useExistingCollection && !selectedCollection) {
+    context.showAlert('Please select a collection', 'error');
+    return;
+  }
 
-    setIsProcessing(true);
+  if (!useExistingCollection && !newCollectionName.trim()) {
+    context.showAlert('Please enter collection name', 'error');
+    return;
+  }
 
-    // Simulate minting process
-    setTimeout(() => {
-      let collectionId = selectedCollection;
-      
-      // Create new collection if needed
-      if (!useExistingCollection) {
-        collectionId = newCollectionName.toLowerCase().replace(/\s+/g, '-');
-        context.addCollection({
-          id: collectionId,
-          name: newCollectionName,
-          description: `${newCollectionName} collection`,
-          image: imagePreview,
-          creator: context.wallet!,
-          floorPrice: 0,
-          nftCount: 0,
-        });
-      }
+  setIsProcessing(true);
 
-      // Mint NFT
-      const newNFT = {
-        id: Date.now().toString(),
-        name: nftName,
-        description: nftDescription,
-        image: imagePreview,
-        collection: collectionId,
+  try {
+    // Step 1: Determine collection ID
+    let collectionId = selectedCollection;
+
+    if (!useExistingCollection) {
+      collectionId = newCollectionName.toLowerCase().replace(/\s+/g, '-');
+
+      // Add new collection locally (so UI updates)
+      context.addCollection({
+        id: collectionId,
+        name: newCollectionName,
+        description: `${newCollectionName} collection`,
+        image: '', // temp, will update after mint
         creator: context.wallet!,
-        owner: context.wallet!,
-        status: 'unlisted' as const,
-        createdAt: new Date(),
-      };
+        floorPrice: 0,
+        nftCount: 0,
+      });
+    }
 
-      context.addNFT(newNFT);
-      context.showAlert(
-        useExistingCollection 
-          ? 'NFT minted successfully!' 
-          : 'Collection created and NFT minted successfully!',
-        'success'
-      );
+    // Step 2: Upload image to IPFS
+    const imageURL = await uploadToIPFS(imageFile);
+    if (!imageURL) throw new Error('Image upload failed');
 
-      // Reset form
-      setImageFile(null);
-      setImagePreview('');
-      setNftName('');
-      setNftDescription('');
-      setSelectedCollection('');
-      setNewCollectionName('');
-      setIsProcessing(false);
-    }, 2000);
-  };
+    // Step 3: Create metadata and upload to IPFS
+    const metadata = {
+      name: nftName,
+      description: nftDescription,
+      image: imageURL,
+      collectionName: selectedCollection ? selectedCollection : newCollectionName,
+      collection: collectionId,
+      creator: context.wallet,
+      createdAt: new Date(),
+    };
+
+    const metadataURL = await uploadJSONToIPFS(metadata);
+    if (!metadataURL) throw new Error('Metadata upload failed');
+
+    // Step 4: Mint NFT on-chain
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const contract = getNFTContract(signer);
+
+    const tx = await contract.mintNFT(metadataURL, newCollectionName, {
+        value: ethers.parseEther("0.01"),
+      });
+
+    // Wait for blockchain confirmation
+    await tx.wait();
+
+    // Step 5: Add NFT to local state for immediate UI update
+    const newNFT = {
+      id: Date.now().toString(),
+      name: nftName,
+      description: nftDescription,
+      image: imageURL,
+      collection: collectionId,
+      creator: context.wallet!,
+      owner: context.wallet!,
+      status: 'unlisted' as const,
+      createdAt: new Date(),
+    };
+
+    context.addNFT(newNFT);
+
+    // Step 6: Update collection image if new collection
+    if (!useExistingCollection) {
+      const updatedCollection = context.collections.find(c => c.id === collectionId);
+      if (updatedCollection) updatedCollection.image = imageURL;
+    }
+
+    context.showAlert(
+      useExistingCollection
+        ? 'NFT minted successfully!'
+        : 'Collection created and NFT minted successfully!',
+      'success'
+    );
+
+    // Step 7: Reset form fields
+    setImageFile(null);
+    setImagePreview('');
+    setNftName('');
+    setNftDescription('');
+    setSelectedCollection('');
+    setNewCollectionName('');
+  } catch (err) {
+    console.error(err);
+    context.showAlert('Minting failed. Please try again.', 'error');
+  } finally {
+    setIsProcessing(false);
+  }
+};
+
 
   const selectedCollectionData = context.collections.find(c => c.id === selectedCollection);
 

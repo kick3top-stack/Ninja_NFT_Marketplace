@@ -9,6 +9,10 @@ import { Navigation } from './components/Navigation';
 import { PreloadEffect } from './components/PreloadEffect';
 import { AlertModal } from './components/AlertModal';
 import { ethers } from 'ethers';
+import { NFT_ADDRESS } from './blockchain/contracts/addresses';
+import { MARKETPLACE_ADDRESS } from './blockchain/contracts/addresses';
+import nftJson from "@/abi/nftAbi.json"
+import marketplaceJson from "@/abi/marketplaceAbi.json"
 
 export type NFT = {
   id: string;
@@ -218,7 +222,80 @@ function App() {
     },
   ]);
 
+  const fetchNFTs = async () => {
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const nftContract = new ethers.Contract(
+      NFT_ADDRESS,
+      nftJson.abi,
+      provider
+    );
+    const marketplaceContract = new ethers.Contract(
+      MARKETPLACE_ADDRESS,
+      marketplaceJson.abi,
+      provider
+    );
+
+    const total = Number(await nftContract.tokenCounter());
+    const fetchedNFTs: NFT[] = [];
+
+    for (let tokenId = 0; tokenId < total; tokenId++) {
+      const tokenURI = await nftContract.tokenURI(tokenId);
+      const owner = await nftContract.ownerOf(tokenId);
+      const metadata = await fetch(tokenURI).then(res => res.json());
+
+      const listing = await marketplaceContract.getListing(
+            NFT_ADDRESS,
+            tokenId,
+          );
+          console.log(nftContract.target)
+      
+      let price: number | undefined;
+      let status: 'listed' | 'unlisted' | 'auction' = 'unlisted';
+
+      if (listing.price > 0) {
+        price = listing.price;
+        status = 'listed';
+      }
+
+      const auction = await marketplaceContract.getAuction(nftContract.target, tokenId);
+      if (auction.endTime && auction.endTime > Date.now() / 1000 && !auction.ended) {
+          status = 'auction';
+      }
+
+      // Fetch auction details if auction exists and is not ended
+      let highestBid: number | undefined;
+      let auctionEndTime: Date | undefined;
+      let minBid: number | undefined;
+
+      if (auction && auction.endTime && !auction.ended) {
+          highestBid = auction.highestBid ? parseFloat(ethers.formatEther(auction.highestBid)) : undefined;
+          auctionEndTime = new Date(auction.endTime * 1000); // Convert endTime (seconds) to Date
+          minBid = auction.minBid ? parseFloat(ethers.formatEther(auction.minBid)) : undefined;
+      }
+          
+      fetchedNFTs.push({
+        id: tokenId.toString(),
+        name: metadata.name,
+        description: metadata.description,
+        image: metadata.image,
+        price,
+        collection: metadata.collection,
+        creator: metadata.creator,
+        owner: owner,
+        status: status,
+        highestBid,
+        auctionEndTime,
+        minBid,
+        createdAt: metadata.createdAt,
+      });
+      console.log(tokenId);
+    }
+
+    setNfts(fetchedNFTs);
+  };
+
   useEffect(() => {
+    fetchNFTs();
     setTimeout(() => {
       setLoading(false);
     }, 3000);

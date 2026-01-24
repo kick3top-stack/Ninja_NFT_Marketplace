@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { X, Clock, User, Percent, Hammer, Tag, Calendar } from 'lucide-react';
 import { NFT, AppContextType } from '../App';
+import { ethers } from 'ethers';
+import { getMarketplaceContract } from '@/blockchain/contracts/marketplaceContract';
+import { getNFTContract } from '@/blockchain/contracts/nftContract';
 
 type NFTModalProps = {
   nft: NFT;
@@ -15,8 +18,9 @@ export function NFTModal({ nft, context, onClose }: NFTModalProps) {
   const [auctionEndDate, setAuctionEndDate] = useState('');
   const [showListForm, setShowListForm] = useState(false);
   const [showAuctionForm, setShowAuctionForm] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  const isOwner = context.wallet === nft.owner;
+  const isOwner = context.wallet?.toLowerCase() === nft.owner.toLowerCase();
   const royalty = 5; // Fixed 5% royalty
 
   const getTimeRemaining = (endTime: Date) => {
@@ -50,7 +54,7 @@ export function NFTModal({ nft, context, onClose }: NFTModalProps) {
     onClose();
   };
 
-  const handleList = () => {
+  const handleList = async () => {
     if (!context.wallet) {
       context.showAlert('Please connect your wallet first', 'error');
       return;
@@ -62,9 +66,51 @@ export function NFTModal({ nft, context, onClose }: NFTModalProps) {
       return;
     }
 
-    context.updateNFT(nft.id, { status: 'listed', price });
-    context.showAlert('NFT listed successfully!', 'success');
-    onClose();
+    setIsProcessing(true);
+
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const marketplaceContract = getMarketplaceContract(signer);
+      const nftContract = getNFTContract(signer);
+
+      const nftAddress = nftContract.target; // Ensure this is not null or undefined
+      console.log("NFT Address: ", nftAddress); // Debugging line
+
+      if (!nftAddress) {
+        throw new Error("NFT contract address is missing or invalid");
+      }
+
+      // Check if the NFT is approved
+      const isApproved = await nftContract.getApproved(BigInt(nft.id)) === marketplaceContract.target;
+      const isApprovedForAll = await nftContract.isApprovedForAll(await signer.getAddress(), marketplaceContract.target);
+
+      if (!isApproved && !isApprovedForAll) {
+        const approvalTx = await nftContract.approve(marketplaceContract.target, BigInt(nft.id));
+        await approvalTx.wait();
+        context.showAlert('Marketplace contract approved!', 'success');
+      }
+
+      const priceInWei = ethers.parseEther(price.toString());
+
+      console.log("Marketplace Contract Address: ", marketplaceContract.target); // Debugging line
+      // Ensure marketplaceContract.address is not null or undefined
+      if (!marketplaceContract.target) {
+        throw new Error("Marketplace contract address is missing or invalid");
+      }
+
+      const tx = await marketplaceContract.listItem(nftAddress, BigInt(nft.id), priceInWei);
+      await tx.wait();
+
+      context.updateNFT(nft.id, { status: 'listed', price });
+      context.showAlert('NFT listed successfully!', 'success');
+      onClose();
+    } catch (err: any) {
+      console.error(err);
+      context.showAlert(err.message || 'Failed to list NFT', 'error');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleCreateAuction = () => {
@@ -267,7 +313,12 @@ export function NFTModal({ nft, context, onClose }: NFTModalProps) {
                     <div className="flex gap-2">
                       <button
                         onClick={handleList}
-                        className="flex-1 px-4 py-2 bg-[#00FFFF] text-black rounded-lg hover:bg-[#00DDDD] transition-colors font-medium"
+                        disabled={isProcessing}
+                        className={`w-full px-6 py-4 rounded-lg font-medium transition-all ${
+                          isProcessing
+                            ? 'bg-gray-600 cursor-not-allowed'
+                            : 'flex-1 px-4 py-2 bg-[#00FFFF] text-black rounded-lg hover:bg-[#00DDDD] transition-colors font-medium'
+                        }`}
                       >
                         List NFT
                       </button>
