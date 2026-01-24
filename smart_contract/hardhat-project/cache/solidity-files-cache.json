@@ -2,8 +2,8 @@
   "_format": "hh-sol-cache-2",
   "files": {
     "E:\\New folder\\Ninja_NFT_Marketplace\\smart_contract\\hardhat-project\\contracts\\Marketplace.sol": {
-      "lastModificationDate": 1769019644837,
-      "contentHash": "a5f4912c8a8c28b7fb48d65f67c8a255",
+      "lastModificationDate": 1769231227104,
+      "contentHash": "e98e4dc079280f320d6f906274948185",
       "sourceName": "contracts/Marketplace.sol",
       "solcConfig": {
         "version": "0.8.28",
@@ -39,7 +39,7 @@
         "^0.8.28"
       ],
       "artifacts": [
-        "NFTMarketplace"
+        "Marketplace"
       ]
     },
     "E:\\New folder\\Ninja_NFT_Marketplace\\smart_contract\\hardhat-project\\node_modules\\hardhat\\console.sol": {
@@ -879,8 +879,8 @@
       ]
     },
     "E:\\New folder\\Ninja_NFT_Marketplace\\smart_contract\\hardhat-project\\contracts\\NFT.sol": {
-      "lastModificationDate": 1769029816668,
-      "contentHash": "c86e3b60aebf5bb17870984c01473ff7",
+      "lastModificationDate": 1769154514540,
+      "contentHash": "1266d600555bff9d1fc3852bf38bba34",
       "sourceName": "contracts/NFT.sol",
       "solcConfig": {
         "version": "0.8.28",

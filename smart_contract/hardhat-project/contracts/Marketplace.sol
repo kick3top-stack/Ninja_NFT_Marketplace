@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 ////////NFTMarketplace.sol/////////////////////
-///0x8d39dd3F1D31313955271a67C56060ECC1a04d17---seplia contract adress
+///0x31F5eB924c124a8A34379fc1A5e86E986F9c0890---seplia contract adress
 
 pragma solidity ^0.8.28;
 
@@ -9,7 +9,7 @@ import "@openzeppelin/contracts/token/common/ERC2981.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "hardhat/console.sol";
 
-contract NFTMarketplace {
+contract Marketplace {
     struct Listing {
         uint256 price;
         address seller;
@@ -171,6 +171,11 @@ contract NFTMarketplace {
         }
 
         emit AuctionEnded(tokenAddress, tokenId, a.highestBidder, a.highestBid);
+    }
+
+    // This function should be added to your smart contract to fetch auction details
+    function getAuction(address tokenAddress, uint256 tokenId) external view returns (Auction memory) {
+        return auctions[tokenAddress][tokenId];
     }
 
     // -------------------------------
