@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Clock, User, Percent, Hammer, Tag, Calendar } from 'lucide-react';
 import { NFT, AppContextType } from '../App';
 import { ethers } from 'ethers';
 import { getMarketplaceContract } from '@/blockchain/contracts/marketplaceContract';
 import { getNFTContract } from '@/blockchain/contracts/nftContract';
+import { sign } from 'crypto';
 
 type NFTModalProps = {
   nft: NFT;
@@ -19,6 +20,7 @@ export function NFTModal({ nft, context, onClose }: NFTModalProps) {
   const [showListForm, setShowListForm] = useState(false);
   const [showAuctionForm, setShowAuctionForm] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [auctionEnded, setAuctionEnded] = useState<boolean>(false);
 
   const isOwner = context.wallet?.toLowerCase() === nft.owner.toLowerCase();
   const royalty = 5; // Fixed 5% royalty
@@ -35,6 +37,38 @@ export function NFTModal({ nft, context, onClose }: NFTModalProps) {
     
     return `${days}d ${hours}h ${minutes}m`;
   };
+
+  const checkAuctionStatus = async () => {
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const marketplaceContract = getMarketplaceContract(signer);
+      const nftContract = getNFTContract(signer);
+
+      // Fetch auction data for this NFT
+      const auctionData = await marketplaceContract.auctions(nftContract.target, BigInt(nft.id));
+
+      // Extract auction end time from contract (auctionData.endTime should be a BigNumber)
+      const endTime = auctionData.endTime; // Should already be a BigNumber
+
+      // Convert BigNumber to a number
+      const endTimeInSeconds = Number(endTime); // Convert BigInt to number
+
+      // Get current timestamp
+      const currentTime = Math.floor(Date.now() / 1000); // Get current time in seconds
+
+      // Check if auction has ended
+      setAuctionEnded(currentTime >= endTimeInSeconds);
+    } catch (error) {
+      console.error('Error fetching auction status:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (nft.status === 'auction') {
+      checkAuctionStatus();
+    }
+  }, [nft]);
 
   const handlePlaceBid = () => {
     if (!context.wallet) {
@@ -77,6 +111,12 @@ export function NFTModal({ nft, context, onClose }: NFTModalProps) {
       const nftAddress = nftContract.target; // Ensure this is not null or undefined
       console.log("NFT Address: ", nftAddress); // Debugging line
 
+      const tokenExists = await nftContract.ownerOf(nft.id);
+      if (!tokenExists) {
+        context.showAlert('Token does not exist', 'error');
+        return;
+      }
+
       if (!nftAddress) {
         throw new Error("NFT contract address is missing or invalid");
       }
@@ -113,7 +153,7 @@ export function NFTModal({ nft, context, onClose }: NFTModalProps) {
     }
   };
 
-  const handleCreateAuction = () => {
+  const handleCreateAuction = async () => {
     if (!context.wallet) {
       context.showAlert('Please connect your wallet first', 'error');
       return;
@@ -136,20 +176,150 @@ export function NFTModal({ nft, context, onClose }: NFTModalProps) {
       return;
     }
 
-    context.updateNFT(nft.id, {
-      status: 'auction',
-      minBid: minPrice,
-      highestBid: minPrice,
-      auctionEndTime: endDate,
-    });
-    context.showAlert('Auction created successfully!', 'success');
-    onClose();
+    setIsProcessing(true);
+
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const marketplaceContract = getMarketplaceContract(signer);
+      const nftContract = getNFTContract(signer);
+
+      const nftAddress = nftContract.target; // NFT contract address
+      const tokenId = BigInt(nft.id);
+      const minBidInWei = ethers.parseEther(minPrice.toString());
+
+      // Calculate duration in seconds
+      const duration = Math.floor((endDate.getTime() - Date.now()) / 1000);
+
+      // Call the Marketplace contract
+      const tx = await marketplaceContract.createAuction(
+        nftAddress,
+        tokenId,
+        minBidInWei,
+        BigInt(duration)
+      );
+      await tx.wait();
+
+      // Update frontend state
+      context.updateNFT(nft.id, {
+        status: 'auction',
+        minBid: minPrice,
+        highestBid: minPrice,
+        auctionEndTime: endDate,
+      });
+
+      context.showAlert('Auction created successfully!', 'success');
+      onClose();
+    } catch (err: any) {
+      console.error(err);
+      setIsProcessing(false);
+      context.showAlert(err.message || 'Failed to create auction', 'error');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
-  const handleCancelListing = () => {
-    context.updateNFT(nft.id, { status: 'unlisted', price: undefined });
-    context.showAlert('Listing cancelled', 'success');
-    onClose();
+  const handleEndAuction = async () => {
+  try {
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const marketplaceContract = getMarketplaceContract(signer);
+    const nftContract = getNFTContract(signer);
+
+    // Assuming that auction-related details (like token address and tokenId) are available
+    const tx = await marketplaceContract.endAuction(nftContract.target, BigInt(nft.id));
+    await tx.wait();  // Wait for the transaction to be confirmed
+
+    context.updateNFT(nft.id, { status: 'unlisted' });
+    context.showAlert('Auction ended successfully!', 'success');
+  } catch (error) {
+    console.error('Error ending auction:', error);
+    context.showAlert('Failed to end auction', 'error');
+  }
+};
+
+  const handleCancelListing = async () => {
+    if (!context.wallet) {
+      context.showAlert('Please connect your wallet first', 'error');
+      return;
+    }
+
+    setIsProcessing(true);
+
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const marketplaceContract = getMarketplaceContract(signer);
+      const nftContract = getNFTContract(signer);
+
+      const nftAddress = nftContract.target; // Make sure this is the correct NFT contract address
+      const tokenId = BigInt(nft.id); // Ensure token ID is in BigInt format
+
+      // Check if the NFT is listed on the marketplace (this check is optional, based on your UX)
+      const listing = await marketplaceContract.getListing(nftAddress, tokenId);
+      if (!listing.price) {
+        context.showAlert('NFT is not listed', 'error');
+        return;
+      }
+
+      // Call cancelListing on the smart contract to cancel the listing
+      const tx = await marketplaceContract.cancelListing(nftAddress, tokenId);
+      await tx.wait();
+
+      // Update frontend context to reflect the status change
+      context.updateNFT(nft.id, { status: 'unlisted', price: undefined });
+      context.showAlert('Listing cancelled', 'success');
+      onClose(); // Close the modal or UI component after successful cancellation
+    } catch (err: any) {
+      console.error(err);
+      setIsProcessing(false);
+      context.showAlert(err.message || 'Failed to cancel listing', 'error');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleBuy = async () => {
+    if (!context.wallet) {
+      context.showAlert('Please connect your wallet first', 'error');
+      return;
+    }
+
+    setIsProcessing(true);
+
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const marketplaceContract = getMarketplaceContract(signer);
+    const nftContract = getNFTContract(signer);
+    const priceInWei = ethers.parseEther(nft.price?.toString() || '0'); // Convert price to wei
+
+    try {
+      // Get the signer and check balance
+      const signerAddress = await signer.getAddress(); // Get signer address
+      const balance = await provider.getBalance(signerAddress); // Fetch balance using provider
+
+      if (balance < priceInWei) {
+        context.showAlert('Insufficient funds', 'error');
+        return;
+      }
+
+      // Call the marketplace contract to execute the buy
+      const tx = await marketplaceContract.buyItem(nftContract.target, nft.id, { value: priceInWei });
+      await tx.wait(); // Wait for the transaction to be confirmed
+
+      // Update the NFT status and owner
+      context.updateNFT(nft.id, { status: 'unlisted', owner: context.wallet });
+      context.showAlert('NFT purchased successfully!', 'success');
+      
+      // Close the modal or page after the transaction is successful
+      onClose();
+    } catch (err) {
+      console.error('Error buying NFT:', err);
+      context.showAlert('Error during purchase', 'error');
+      setIsProcessing(false);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -250,31 +420,85 @@ export function NFTModal({ nft, context, onClose }: NFTModalProps) {
             </div>
 
             {/* Actions */}
-            {nft.status === 'auction' && !isOwner && context.wallet && (
+            {nft.status === 'auction' && context.wallet && (
               <div className="space-y-3">
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="Enter bid amount (ETH)"
-                  value={bidAmount}
-                  onChange={(e) => setBidAmount(e.target.value)}
-                  className="w-full px-4 py-3 bg-[#121212] border border-gray-700 rounded-lg focus:outline-none focus:border-[#00FFFF]"
-                />
-                <button
-                  onClick={handlePlaceBid}
-                  className="w-full px-6 py-3 bg-[#00FFFF] text-black rounded-lg hover:bg-[#00DDDD] transition-colors font-medium"
-                >
-                  Place Bid
-                </button>
+                {nft.owner.toLowerCase() === context.wallet.toLowerCase() && !auctionEnded && (  // Only show this button to the owner if the auction hasn't ended
+                  <button
+                    onClick={handleEndAuction}
+                    disabled={isProcessing}
+                    className={`w-full px-6 py-3 rounded-lg ${
+                          isProcessing
+                            ? 'bg-gray-600 cursor-not-allowed'
+                            : 'bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-colors font-medium flex-1 px-4 py-2 bg-[#00FFFF] text-black rounded-lg hover:bg-[#00DDDD] transition-colors font-medium'
+                        }`}
+                  >
+                    {isProcessing ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                        {'Ending...'}
+                      </span>
+                    ) : (
+                      'End Auction'
+                    )}
+              </button>
+                )}
+                {!isOwner && (
+                  <>
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="Enter bid amount (ETH)"
+                      value={bidAmount}
+                      onChange={(e) => setBidAmount(e.target.value)}
+                      className="w-full px-4 py-3 bg-[#121212] border border-gray-700 rounded-lg focus:outline-none focus:border-[#00FFFF]"
+                    />
+                    <button
+                      onClick={handlePlaceBid}
+                      className="w-full px-6 py-3 bg-[#00FFFF] text-black rounded-lg hover:bg-[#00DDDD] transition-colors font-medium"
+                    >
+                      Place Bid
+                    </button>
+                  </>
+                )}
               </div>
+            )}
+
+
+            {nft.status === 'listed' && !isOwner && (
+              <button
+                onClick={handleBuy}
+                disabled={isProcessing}
+                className={`w-full px-6 py-3 rounded-lg  ${
+                          isProcessing
+                            ? 'bg-gray-600 cursor-not-allowed'
+                            : 'bg-[#00FFFF] text-black hover:bg-[#00DDDD] transition-colors font-medium'
+                        }`}
+              >
+                {isProcessing ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                        {'Buying...'}
+                      </span>
+                    ) : (
+                      'Buy'
+                    )}
+              </button>
             )}
 
             {nft.status === 'listed' && isOwner && (
               <button
                 onClick={handleCancelListing}
-                className="w-full px-6 py-3 bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/30 transition-colors font-medium"
+                className={`w-full px-6 py-3 rounded-lg  ${
+                          isProcessing
+                            ? 'bg-gray-600 cursor-not-allowed'
+                            : 'bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-colors font-medium flex-1 px-4 py-2 bg-[#00FFFF] text-black rounded-lg hover:bg-[#00DDDD] transition-colors font-medium'
+                        }`}
               >
-                Cancel Listing
+                {
+                  `${
+                  isProcessing ? 'Canceling...' : 'Cancel List'
+                  }`
+                }
               </button>
             )}
 
@@ -314,13 +538,20 @@ export function NFTModal({ nft, context, onClose }: NFTModalProps) {
                       <button
                         onClick={handleList}
                         disabled={isProcessing}
-                        className={`w-full px-6 py-4 rounded-lg font-medium transition-all ${
+                        className={`flex-1 px-4 py-2 rounded-lg font-medium transition-all ${
                           isProcessing
                             ? 'bg-gray-600 cursor-not-allowed'
-                            : 'flex-1 px-4 py-2 bg-[#00FFFF] text-black rounded-lg hover:bg-[#00DDDD] transition-colors font-medium'
+                            : 'bg-[#00FFFF] text-black hover:bg-[#00DDDD] transition-colors font-medium'
                         }`}
                       >
-                        List NFT
+                        {isProcessing ? (
+                          <span className="flex items-center justify-center gap-2">
+                            <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                            {'Listing...'}
+                          </span>
+                        ) : (
+                          'List NFT'
+                        )}
                       </button>
                       <button
                         onClick={() => setShowListForm(false)}
@@ -355,12 +586,25 @@ export function NFTModal({ nft, context, onClose }: NFTModalProps) {
                     <div className="flex gap-2">
                       <button
                         onClick={handleCreateAuction}
-                        className="flex-1 px-4 py-2 bg-[#00FFFF] text-black rounded-lg hover:bg-[#00DDDD] transition-colors font-medium"
+                        disabled={isProcessing}
+                        className={`w-full px-6 py-4 rounded-lg font-medium transition-all ${
+                          isProcessing
+                            ? 'bg-gray-600 cursor-not-allowed'
+                            : 'bg-[#00FFFF] text-black hover:bg-[#00DDDD] transition-colors font-medium'
+                        }`}
                       >
-                        Start Auction
+                        {isProcessing ? (
+                          <span className="flex items-center justify-center gap-2">
+                            <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                            {'Starting...'}
+                          </span>
+                        ) : (
+                          'Start Auction'
+                        )}
                       </button>
                       <button
                         onClick={() => setShowAuctionForm(false)}
+                        disabled={isProcessing}
                         className="flex-1 px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-colors"
                       >
                         Cancel

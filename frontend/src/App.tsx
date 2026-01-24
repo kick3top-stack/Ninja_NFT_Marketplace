@@ -73,136 +73,10 @@ function App() {
 
   // Mock data
   const [nfts, setNfts] = useState<NFT[]>([
-    {
-      id: '1',
-      name: 'Cosmic Dream #1',
-      description: 'A beautiful cosmic artwork',
-      image: 'https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?w=400',
-      price: 2.5,
-      collection: 'cosmic-dreams',
-      creator: '0x1234...5678',
-      owner: '0x1234...5678',
-      status: 'listed',
-      rarity: 'Rare',
-      createdAt: new Date('2024-01-15'),
-    },
-    {
-      id: '2',
-      name: 'Digital Horizon #42',
-      description: 'Abstract digital landscape',
-      image: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=400',
-      price: 1.8,
-      collection: 'digital-horizons',
-      creator: '0xabcd...efgh',
-      owner: '0xabcd...efgh',
-      status: 'auction',
-      highestBid: 1.2,
-      minBid: 1.0,
-      auctionEndTime: new Date(Date.now() + 24 * 60 * 60 * 1000),
-      rarity: 'Common',
-      createdAt: new Date('2024-01-20'),
-    },
-    {
-      id: '3',
-      name: 'Neon City #7',
-      description: 'Cyberpunk cityscape',
-      image: 'https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?w=400',
-      price: 3.2,
-      collection: 'neon-cities',
-      creator: '0x9876...5432',
-      owner: '0x9876...5432',
-      status: 'listed',
-      rarity: 'Epic',
-      createdAt: new Date('2024-01-10'),
-    },
-    {
-      id: '4',
-      name: 'Abstract Wave #15',
-      description: 'Fluid abstract art',
-      image: 'https://images.unsplash.com/photo-1618172193622-ae2d025f4032?w=400',
-      collection: 'abstract-waves',
-      creator: '0x1111...2222',
-      owner: '0x1111...2222',
-      status: 'unlisted',
-      rarity: 'Rare',
-      createdAt: new Date('2024-01-25'),
-    },
-    {
-      id: '5',
-      name: 'Galaxy Portal #3',
-      description: 'Portal to another dimension',
-      image: 'https://images.unsplash.com/photo-1635070041078-e363dbe005cb?w=400',
-      price: 4.5,
-      collection: 'cosmic-dreams',
-      creator: '0x1234...5678',
-      owner: '0x3333...4444',
-      status: 'listed',
-      rarity: 'Legendary',
-      createdAt: new Date('2024-01-12'),
-    },
-    {
-      id: '6',
-      name: 'Pixel Paradise #88',
-      description: 'Retro pixel art',
-      image: 'https://images.unsplash.com/photo-1618556450994-a6a128ef0d9d?w=400',
-      collection: 'pixel-paradise',
-      creator: '0x5555...6666',
-      owner: '0x5555...6666',
-      status: 'auction',
-      highestBid: 2.8,
-      minBid: 2.5,
-      auctionEndTime: new Date(Date.now() + 12 * 60 * 60 * 1000),
-      rarity: 'Epic',
-      createdAt: new Date('2024-01-18'),
-    },
   ]);
 
   const [collections, setCollections] = useState<Collection[]>([
-    {
-      id: 'cosmic-dreams',
-      name: 'Cosmic Dreams',
-      description: 'A collection of cosmic and space-themed artworks',
-      image: 'https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?w=400',
-      creator: '0x1234...5678',
-      floorPrice: 2.5,
-      nftCount: 2,
-    },
-    {
-      id: 'digital-horizons',
-      name: 'Digital Horizons',
-      description: 'Abstract digital landscapes and horizons',
-      image: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=400',
-      creator: '0xabcd...efgh',
-      floorPrice: 1.8,
-      nftCount: 1,
-    },
-    {
-      id: 'neon-cities',
-      name: 'Neon Cities',
-      description: 'Cyberpunk cityscapes with neon lights',
-      image: 'https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?w=400',
-      creator: '0x9876...5432',
-      floorPrice: 3.2,
-      nftCount: 1,
-    },
-    {
-      id: 'abstract-waves',
-      name: 'Abstract Waves',
-      description: 'Fluid and dynamic abstract artworks',
-      image: 'https://images.unsplash.com/photo-1618172193622-ae2d025f4032?w=400',
-      creator: '0x1111...2222',
-      floorPrice: 0,
-      nftCount: 1,
-    },
-    {
-      id: 'pixel-paradise',
-      name: 'Pixel Paradise',
-      description: 'Retro-inspired pixel art collection',
-      image: 'https://images.unsplash.com/photo-1618556450994-a6a128ef0d9d?w=400',
-      creator: '0x5555...6666',
-      floorPrice: 2.8,
-      nftCount: 1,
-    },
+    
   ]);
 
   const [transactions, setTransactions] = useState<Transaction[]>([
@@ -252,8 +126,8 @@ function App() {
       let price: number | undefined;
       let status: 'listed' | 'unlisted' | 'auction' = 'unlisted';
 
-      if (listing.price > 0) {
-        price = listing.price;
+      if (listing.price > 0n) {
+        price = parseFloat(ethers.formatEther(listing.price));
         status = 'listed';
       }
 
@@ -269,7 +143,7 @@ function App() {
 
       if (auction && auction.endTime && !auction.ended) {
           highestBid = auction.highestBid ? parseFloat(ethers.formatEther(auction.highestBid)) : undefined;
-          auctionEndTime = new Date(auction.endTime * 1000); // Convert endTime (seconds) to Date
+          auctionEndTime = new Date(Number(auction.endTime) * 1000); // Convert endTime (seconds) to Date
           minBid = auction.minBid ? parseFloat(ethers.formatEther(auction.minBid)) : undefined;
       }
           
@@ -288,7 +162,21 @@ function App() {
         minBid,
         createdAt: metadata.createdAt,
       });
-      console.log(tokenId);
+      console.log({
+        id: tokenId.toString(),
+        name: metadata.name,
+        description: metadata.description,
+        image: metadata.image,
+        price,
+        collection: metadata.collection,
+        creator: metadata.creator,
+        owner: owner,
+        status: status,
+        highestBid,
+        auctionEndTime,
+        minBid,
+        createdAt: metadata.createdAt,
+      });
     }
 
     setNfts(fetchedNFTs);
@@ -296,10 +184,51 @@ function App() {
 
   useEffect(() => {
     fetchNFTs();
+
     setTimeout(() => {
       setLoading(false);
     }, 3000);
   }, []);
+
+  useEffect(() => {
+    if (nfts.length === 0) return;
+
+    const collectionMap = new Map<string, Collection>();
+
+    for (const nft of nfts) {
+      const key = nft.collection;
+
+      if (!collectionMap.has(key)) {
+        collectionMap.set(key, {
+          id: key,
+          name: key
+            .split('-')
+            .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+            .join(' '),
+          description: `Collection of ${key} NFTs`,
+          image: nft.image,
+          creator: nft.creator,
+          floorPrice: nft.price ?? Infinity,
+          nftCount: 1,
+        });
+      } else {
+        const col = collectionMap.get(key)!;
+        col.nftCount += 1;
+
+        if (nft.price && nft.price < col.floorPrice) {
+          col.floorPrice = nft.price;
+        }
+      }
+    }
+
+    // Replace Infinity with 0 for unlisted collections
+    const finalCollections = Array.from(collectionMap.values()).map(c => ({
+      ...c,
+      floorPrice: c.floorPrice === Infinity ? 0 : c.floorPrice,
+    }));
+
+    setCollections(finalCollections);
+  }, [nfts]);
 
   const connectWallet = async () => {
     if (typeof window.ethereum === 'undefined') {
@@ -352,7 +281,7 @@ function App() {
   };
 
   const addCollection = (collection: Collection) => {
-    setCollections([...collections, collection]);
+    
   };
 
   const showAlert = (message: string, type: 'success' | 'error') => {
