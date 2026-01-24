@@ -279,6 +279,49 @@ export function NFTModal({ nft, context, onClose }: NFTModalProps) {
     }
   };
 
+  const handleBuy = async () => {
+    if (!context.wallet) {
+      context.showAlert('Please connect your wallet first', 'error');
+      return;
+    }
+
+    setIsProcessing(true);
+
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const marketplaceContract = getMarketplaceContract(signer);
+    const nftContract = getNFTContract(signer);
+    const priceInWei = ethers.parseEther(nft.price?.toString() || '0'); // Convert price to wei
+
+    try {
+      // Get the signer and check balance
+      const signerAddress = await signer.getAddress(); // Get signer address
+      const balance = await provider.getBalance(signerAddress); // Fetch balance using provider
+
+      if (balance < priceInWei) {
+        context.showAlert('Insufficient funds', 'error');
+        return;
+      }
+
+      // Call the marketplace contract to execute the buy
+      const tx = await marketplaceContract.buyItem(nftContract.target, nft.id, { value: priceInWei });
+      await tx.wait(); // Wait for the transaction to be confirmed
+
+      // Update the NFT status and owner
+      context.updateNFT(nft.id, { status: 'unlisted', owner: context.wallet });
+      context.showAlert('NFT purchased successfully!', 'success');
+      
+      // Close the modal or page after the transaction is successful
+      onClose();
+    } catch (err) {
+      console.error('Error buying NFT:', err);
+      context.showAlert('Error during purchase', 'error');
+      setIsProcessing(false);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
       <div className="bg-[#1a1a1a] rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border border-gray-800">
@@ -418,6 +461,28 @@ export function NFTModal({ nft, context, onClose }: NFTModalProps) {
                   </>
                 )}
               </div>
+            )}
+
+
+            {nft.status === 'listed' && !isOwner && (
+              <button
+                onClick={handleBuy}
+                disabled={isProcessing}
+                className={`w-full px-6 py-3 rounded-lg  ${
+                          isProcessing
+                            ? 'bg-gray-600 cursor-not-allowed'
+                            : 'bg-[#00FFFF] text-black hover:bg-[#00DDDD] transition-colors font-medium'
+                        }`}
+              >
+                {isProcessing ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                        {'Buying...'}
+                      </span>
+                    ) : (
+                      'Buy'
+                    )}
+              </button>
             )}
 
             {nft.status === 'listed' && isOwner && (
