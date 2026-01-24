@@ -146,10 +146,44 @@ export function NFTModal({ nft, context, onClose }: NFTModalProps) {
     onClose();
   };
 
-  const handleCancelListing = () => {
-    context.updateNFT(nft.id, { status: 'unlisted', price: undefined });
-    context.showAlert('Listing cancelled', 'success');
-    onClose();
+  const handleCancelListing = async () => {
+    if (!context.wallet) {
+      context.showAlert('Please connect your wallet first', 'error');
+      return;
+    }
+
+    setIsProcessing(true);
+
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const marketplaceContract = getMarketplaceContract(signer);
+      const nftContract = getNFTContract(signer);
+
+      const nftAddress = nftContract.target; // Make sure this is the correct NFT contract address
+      const tokenId = BigInt(nft.id); // Ensure token ID is in BigInt format
+
+      // Check if the NFT is listed on the marketplace (this check is optional, based on your UX)
+      const listing = await marketplaceContract.getListing(nftAddress, tokenId);
+      if (!listing.price) {
+        context.showAlert('NFT is not listed', 'error');
+        return;
+      }
+
+      // Call cancelListing on the smart contract to cancel the listing
+      const tx = await marketplaceContract.cancelListing(nftAddress, tokenId);
+      await tx.wait();
+
+      // Update frontend context to reflect the status change
+      context.updateNFT(nft.id, { status: 'unlisted', price: undefined });
+      context.showAlert('Listing cancelled', 'success');
+      onClose(); // Close the modal or UI component after successful cancellation
+    } catch (err: any) {
+      console.error(err);
+      context.showAlert(err.message || 'Failed to cancel listing', 'error');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -272,9 +306,17 @@ export function NFTModal({ nft, context, onClose }: NFTModalProps) {
             {nft.status === 'listed' && isOwner && (
               <button
                 onClick={handleCancelListing}
-                className="w-full px-6 py-3 bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/30 transition-colors font-medium"
+                className={`w-full px-6 py-3 rounded-lg  ${
+                          isProcessing
+                            ? 'bg-gray-600 cursor-not-allowed'
+                            : 'bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-colors font-medium flex-1 px-4 py-2 bg-[#00FFFF] text-black rounded-lg hover:bg-[#00DDDD] transition-colors font-medium'
+                        }`}
               >
-                Cancel Listing
+                {
+                  `${
+                  isProcessing ? 'Canceling...' : 'Cancel List'
+                  }`
+                }
               </button>
             )}
 
@@ -320,7 +362,11 @@ export function NFTModal({ nft, context, onClose }: NFTModalProps) {
                             : 'flex-1 px-4 py-2 bg-[#00FFFF] text-black rounded-lg hover:bg-[#00DDDD] transition-colors font-medium'
                         }`}
                       >
-                        List NFT
+                        {
+                          `${
+                          isProcessing ? 'Listing...' : 'List NFT'
+                          }`
+                        }
                       </button>
                       <button
                         onClick={() => setShowListForm(false)}
