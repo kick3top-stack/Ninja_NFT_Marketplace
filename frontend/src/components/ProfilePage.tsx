@@ -1,7 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AppContextType } from '../App';
 import { NFTCard } from './NFTCard';
 import { Wallet, LogOut, Package, History } from 'lucide-react';
+import { NFT_ADDRESS } from '@/blockchain/contracts/addresses';
+import nftJson from "@/abi/nftAbi.json"
+import { ethers } from 'ethers';
 
 type ProfilePageProps = {
   context: AppContextType;
@@ -11,6 +14,74 @@ type Tab = 'owned' | 'history';
 
 export function ProfilePage({ context }: ProfilePageProps) {
   const [activeTab, setActiveTab] = useState<Tab>('owned');
+  const [isProcessing, setIsProcessing] = useState<Boolean>(false);
+  const [isOwner, setIsOwner] = useState(false);
+
+  const getNFTContract = (signerOrProvider: ethers.Signer | ethers.Provider) => {
+    return new ethers.Contract(NFT_ADDRESS, nftJson.abi, signerOrProvider);
+  };
+
+  const checkOwnership = async () => {
+    if (!window.ethereum || !context.wallet) return false;
+
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner(); // async here
+    const nftContract = getNFTContract(signer);
+
+    const contractOwner = await nftContract.owner(); // async call
+    const isOwner = context.wallet.toLowerCase() === contractOwner.toLowerCase();
+
+    return isOwner;
+  };
+
+  useEffect(() => {
+    const fetchOwnership = async () => {
+      if (!context.wallet) return;
+
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const nftContract = getNFTContract(signer);
+
+      const contractOwner = await nftContract.owner();
+      setIsOwner(context.wallet.toLowerCase() === contractOwner.toLowerCase());
+    };
+
+      fetchOwnership();
+    }, [context.wallet]);
+
+  const handleWithDraw = async () => {
+    if (!context.wallet) {
+      context.showAlert('Please connect your wallet first', 'error');
+      return;
+    }
+
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const nftContract = getNFTContract(signer);
+
+    setIsProcessing(true);
+
+    try {
+      const owner: string = await nftContract.owner();
+      const balance = await provider.getBalance(nftContract.target);
+      const withdrawableETH = Number(ethers.formatEther(balance));
+
+      if(withdrawableETH == 0) {
+        throw new Error('No ETH available to withdraw');
+      }
+      // Call the withdraw function on the contract
+      const tx = await nftContract.withdraw(owner);
+      await tx.wait();
+
+      context.showAlert('Withdrawal successful!', 'success');
+    } catch (err) {
+      console.error('Error withdrawing funds:', err);
+      context.showAlert('Error withdrawing funds', 'error');
+      setIsProcessing(false);
+    } finally {
+      setIsProcessing(false);
+    }
+  }
 
   if (!context.wallet) {
     return (
@@ -71,6 +142,7 @@ export function ProfilePage({ context }: ProfilePageProps) {
               </div>
             </div>
 
+            <div className='button-container'>
             <button
               onClick={context.disconnectWallet}
               className="flex items-center gap-2 px-4 py-2 bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/30 transition-colors"
@@ -78,6 +150,27 @@ export function ProfilePage({ context }: ProfilePageProps) {
               <LogOut className="w-4 h-4" />
               Disconnect Wallet
             </button>
+              {isOwner && (
+                <button
+                  onClick={handleWithDraw}
+                  disabled={isProcessing}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
+                    isProcessing
+                      ? 'bg-gray-600 cursor-not-allowed'
+                      : 'bg-[#00FFFF] text-black hover:bg-[#00DDDD] transition-colors font-medium'
+                  }`}
+                >
+                  {isProcessing ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                      {'WithDrawing...'}
+                    </span>
+                  ) : (
+                    'WithDraw'
+                  )}
+                </button>
+                )}
+            </div>
           </div>
         </div>
 

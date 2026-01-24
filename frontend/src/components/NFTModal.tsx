@@ -70,22 +70,49 @@ export function NFTModal({ nft, context, onClose }: NFTModalProps) {
     }
   }, [nft]);
 
-  const handlePlaceBid = () => {
+  const handlePlaceBid = async () => {
     if (!context.wallet) {
       context.showAlert('Please connect your wallet first', 'error');
       return;
     }
-    
+
+    // Convert bidAmount to float and check for validity
     const bid = parseFloat(bidAmount);
     if (isNaN(bid) || bid <= (nft.highestBid || nft.minBid || 0)) {
       context.showAlert('Bid must be higher than current bid', 'error');
       return;
     }
 
-    context.updateNFT(nft.id, { highestBid: bid });
-    context.showAlert('Bid placed successfully!', 'success');
-    setBidAmount('');
-    onClose();
+    // Get the provider and signer from ethers.js
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const marketplaceContract = getMarketplaceContract(signer);
+    const nftContract = getNFTContract(signer);
+
+    // Get the marketplace contract
+
+    try {
+      // Send the bid transaction to the smart contract
+      const tx = await marketplaceContract.bid(
+        nftContract.target,
+        nft.id, // Assuming nft.id is the token ID
+        { value: ethers.parseEther(bidAmount) } // Sending the bid as the transaction value
+      );
+
+      // Wait for the transaction to be mined
+      await tx.wait();
+
+      // Update the context with the new highest bid
+      context.updateNFT(nft.id, { highestBid: bid });
+
+      // Show success alert
+      context.showAlert('Bid placed successfully!', 'success');
+      setBidAmount(''); // Reset bid input
+      onClose(); // Close the modal or whatever you want after placing the bid
+    } catch (error) {
+      console.error('Error placing bid:', error);
+      context.showAlert('Error placing bid. Please try again.', 'error');
+    }
   };
 
   const handleList = async () => {
