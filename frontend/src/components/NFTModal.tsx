@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
-import { X, Clock, User, Percent, Hammer, Tag, Calendar } from 'lucide-react';
+import { X, Clock, User, Percent, Hammer, Tag, Calendar, Send } from 'lucide-react';
 import { NFT, AppContextType } from '../App';
 import { ethers } from 'ethers';
 import { getMarketplaceContract } from '@/blockchain/contracts/marketplaceContract';
 import { getNFTContract } from '@/blockchain/contracts/nftContract';
-import { sign } from 'crypto';
+import { getErrorMessage, isUserRejection } from '@/blockchain/utils/errorMessages';
 
 type NFTModalProps = {
   nft: NFT;
@@ -19,6 +19,8 @@ export function NFTModal({ nft, context, onClose }: NFTModalProps) {
   const [auctionEndDate, setAuctionEndDate] = useState('');
   const [showListForm, setShowListForm] = useState(false);
   const [showAuctionForm, setShowAuctionForm] = useState(false);
+  const [showTransferForm, setShowTransferForm] = useState(false);
+  const [transferRecipient, setTransferRecipient] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [auctionEnded, setAuctionEnded] = useState<boolean>(false);
 
@@ -70,22 +72,52 @@ export function NFTModal({ nft, context, onClose }: NFTModalProps) {
     }
   }, [nft]);
 
-  const handlePlaceBid = () => {
+  const handlePlaceBid = async () => {
     if (!context.wallet) {
       context.showAlert('Please connect your wallet first', 'error');
       return;
     }
-    
+
+    // Convert bidAmount to float and check for validity
     const bid = parseFloat(bidAmount);
     if (isNaN(bid) || bid <= (nft.highestBid || nft.minBid || 0)) {
       context.showAlert('Bid must be higher than current bid', 'error');
       return;
     }
 
-    context.updateNFT(nft.id, { highestBid: bid });
-    context.showAlert('Bid placed successfully!', 'success');
-    setBidAmount('');
-    onClose();
+    // Get the provider and signer from ethers.js
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const marketplaceContract = getMarketplaceContract(signer);
+    const nftContract = getNFTContract(signer);
+
+    // Get the marketplace contract
+
+    try {
+      // Send the bid transaction to the smart contract
+      const tx = await marketplaceContract.bid(
+        nftContract.target,
+        nft.id, // Assuming nft.id is the token ID
+        { value: ethers.parseEther(bidAmount) } // Sending the bid as the transaction value
+      );
+
+      // Wait for the transaction to be mined
+      await tx.wait();
+
+      // Update the context with the new highest bid
+      context.updateNFT(nft.id, { highestBid: bid });
+
+      // Show success alert
+      context.showAlert('Bid placed successfully!', 'success');
+      setBidAmount(''); // Reset bid input
+      onClose(); // Close the modal or whatever you want after placing the bid
+    } catch (error) {
+      console.error('Error placing bid:', error);
+      // Don't show error for user rejection
+      if (!isUserRejection(error)) {
+        context.showAlert(getErrorMessage(error), 'error');
+      }
+    }
   };
 
   const handleList = async () => {
@@ -113,7 +145,8 @@ export function NFTModal({ nft, context, onClose }: NFTModalProps) {
 
       const tokenExists = await nftContract.ownerOf(nft.id);
       if (!tokenExists) {
-        context.showAlert('Token does not exist', 'error');
+        context.showAlert('This NFT no longer exists or has been burned.', 'error');
+        setIsProcessing(false);
         return;
       }
 
@@ -147,7 +180,9 @@ export function NFTModal({ nft, context, onClose }: NFTModalProps) {
       onClose();
     } catch (err: any) {
       console.error(err);
-      context.showAlert(err.message || 'Failed to list NFT', 'error');
+      if (!isUserRejection(err)) {
+        context.showAlert(getErrorMessage(err), 'error');
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -213,7 +248,9 @@ export function NFTModal({ nft, context, onClose }: NFTModalProps) {
     } catch (err: any) {
       console.error(err);
       setIsProcessing(false);
-      context.showAlert(err.message || 'Failed to create auction', 'error');
+      if (!isUserRejection(err)) {
+        context.showAlert(getErrorMessage(err), 'error');
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -234,7 +271,9 @@ export function NFTModal({ nft, context, onClose }: NFTModalProps) {
     context.showAlert('Auction ended successfully!', 'success');
   } catch (error) {
     console.error('Error ending auction:', error);
-    context.showAlert('Failed to end auction', 'error');
+    if (!isUserRejection(error)) {
+      context.showAlert(getErrorMessage(error), 'error');
+    }
   }
 };
 
@@ -257,8 +296,9 @@ export function NFTModal({ nft, context, onClose }: NFTModalProps) {
 
       // Check if the NFT is listed on the marketplace (this check is optional, based on your UX)
       const listing = await marketplaceContract.getListing(nftAddress, tokenId);
-      if (!listing.price) {
-        context.showAlert('NFT is not listed', 'error');
+      if (!listing.price || listing.price === 0n) {
+        context.showAlert('This NFT is not currently listed for sale. It may have already been sold or the listing was cancelled.', 'error');
+        setIsProcessing(false);
         return;
       }
 
@@ -273,7 +313,9 @@ export function NFTModal({ nft, context, onClose }: NFTModalProps) {
     } catch (err: any) {
       console.error(err);
       setIsProcessing(false);
-      context.showAlert(err.message || 'Failed to cancel listing', 'error');
+      if (!isUserRejection(err)) {
+        context.showAlert(getErrorMessage(err), 'error');
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -315,8 +357,70 @@ export function NFTModal({ nft, context, onClose }: NFTModalProps) {
       onClose();
     } catch (err) {
       console.error('Error buying NFT:', err);
-      context.showAlert('Error during purchase', 'error');
+      if (!isUserRejection(err)) {
+        context.showAlert(getErrorMessage(err), 'error');
+      }
       setIsProcessing(false);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleFreeTransfer = async () => {
+    if (!context.wallet) {
+      context.showAlert('Please connect your wallet first', 'error');
+      return;
+    }
+
+    if (!transferRecipient.trim()) {
+      context.showAlert('Please enter a recipient address', 'error');
+      return;
+    }
+
+    // Validate Ethereum address
+    if (!ethers.isAddress(transferRecipient)) {
+      context.showAlert('Invalid Ethereum address', 'error');
+      return;
+    }
+
+    // Check if recipient is the same as current owner
+    if (transferRecipient.toLowerCase() === nft.owner.toLowerCase()) {
+      context.showAlert('Cannot transfer to yourself', 'error');
+      return;
+    }
+
+    setIsProcessing(true);
+
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const nftContract = getNFTContract(signer);
+
+      // Verify ownership before transfer
+      const currentOwner = await nftContract.ownerOf(BigInt(nft.id));
+      if (currentOwner.toLowerCase() !== context.wallet?.toLowerCase()) {
+        context.showAlert('You are not the owner of this NFT', 'error');
+        setIsProcessing(false);
+        return;
+      }
+
+      // Call the freeTransfer function on the NFT contract
+      const tx = await nftContract.freeTransfer(BigInt(nft.id), transferRecipient);
+      await tx.wait();
+
+      // Update the NFT owner in the context
+      context.updateNFT(nft.id, { owner: transferRecipient });
+      context.showAlert('NFT transferred successfully!', 'success');
+      
+      // Reset form and close modal
+      setTransferRecipient('');
+      setShowTransferForm(false);
+      onClose();
+    } catch (err: any) {
+      console.error('Error transferring NFT:', err);
+      if (!isUserRejection(err)) {
+        context.showAlert(getErrorMessage(err), 'error');
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -504,21 +608,40 @@ export function NFTModal({ nft, context, onClose }: NFTModalProps) {
 
             {nft.status === 'unlisted' && isOwner && (
               <div className="space-y-3">
-                {!showListForm && !showAuctionForm && (
+                {!showListForm && !showAuctionForm && !showTransferForm && (
                   <>
                     <button
-                      onClick={() => setShowListForm(true)}
+                      onClick={() => {
+                        setShowListForm(true);
+                        setShowAuctionForm(false);
+                        setShowTransferForm(false);
+                      }}
                       className="w-full px-6 py-3 bg-[#00FFFF] text-black rounded-lg hover:bg-[#00DDDD] transition-colors font-medium flex items-center justify-center gap-2"
                     >
                       <Tag className="w-4 h-4" />
                       List for Sale
                     </button>
                     <button
-                      onClick={() => setShowAuctionForm(true)}
+                      onClick={() => {
+                        setShowAuctionForm(true);
+                        setShowListForm(false);
+                        setShowTransferForm(false);
+                      }}
                       className="w-full px-6 py-3 bg-white/10 text-white border border-white/20 rounded-lg hover:bg-white/20 transition-colors font-medium flex items-center justify-center gap-2"
                     >
                       <Hammer className="w-4 h-4" />
                       Create Auction
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowTransferForm(true);
+                        setShowListForm(false);
+                        setShowAuctionForm(false);
+                      }}
+                      className="w-full px-6 py-3 bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded-lg hover:bg-purple-500/30 transition-colors font-medium flex items-center justify-center gap-2"
+                    >
+                      <Send className="w-4 h-4" />
+                      Free Transfer
                     </button>
                   </>
                 )}
@@ -554,7 +677,11 @@ export function NFTModal({ nft, context, onClose }: NFTModalProps) {
                         )}
                       </button>
                       <button
-                        onClick={() => setShowListForm(false)}
+                        onClick={() => {
+                          setShowListForm(false);
+                          setListPrice('');
+                        }}
+                        disabled={isProcessing}
                         className="flex-1 px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-colors"
                       >
                         Cancel
@@ -603,7 +730,60 @@ export function NFTModal({ nft, context, onClose }: NFTModalProps) {
                         )}
                       </button>
                       <button
-                        onClick={() => setShowAuctionForm(false)}
+                        onClick={() => {
+                          setShowAuctionForm(false);
+                          setAuctionMinPrice('');
+                          setAuctionEndDate('');
+                        }}
+                        disabled={isProcessing}
+                        className="flex-1 px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {showTransferForm && (
+                  <div className="space-y-3 p-4 bg-[#121212] rounded-xl">
+                    <h4 className="font-bold">Free Transfer</h4>
+                    <p className="text-sm text-gray-400">
+                      Transfer this NFT to another address for free. This action cannot be undone.
+                    </p>
+                    <input
+                      type="text"
+                      placeholder="Recipient address (0x...)"
+                      value={transferRecipient}
+                      onChange={(e) => setTransferRecipient(e.target.value)}
+                      className="w-full px-4 py-3 bg-[#1a1a1a] border border-gray-700 rounded-lg focus:outline-none focus:border-purple-500 font-mono text-sm"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleFreeTransfer}
+                        disabled={isProcessing}
+                        className={`flex-1 px-4 py-2 rounded-lg font-medium transition-all ${
+                          isProcessing
+                            ? 'bg-gray-600 cursor-not-allowed'
+                            : 'bg-purple-500 text-white hover:bg-purple-600 transition-colors'
+                        }`}
+                      >
+                        {isProcessing ? (
+                          <span className="flex items-center justify-center gap-2">
+                            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            {'Transferring...'}
+                          </span>
+                        ) : (
+                          <span className="flex items-center justify-center gap-2">
+                            <Send className="w-4 h-4" />
+                            Transfer NFT
+                          </span>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowTransferForm(false);
+                          setTransferRecipient('');
+                        }}
                         disabled={isProcessing}
                         className="flex-1 px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-colors"
                       >

@@ -51,9 +51,15 @@ export function CollectionDetailPage({ collectionId, context }: CollectionDetail
         const priceB2 = b.price || b.highestBid || 0;
         return priceB2 - priceA2;
       case 'date-new':
-        return b.createdAt.getTime() - a.createdAt.getTime();
+        return (
+          (b.createdAt instanceof Date && !isNaN(b.createdAt.getTime()) ? b.createdAt.getTime() : 0) -
+          (a.createdAt instanceof Date && !isNaN(a.createdAt.getTime()) ? a.createdAt.getTime() : 0)
+        );
       case 'date-old':
-        return a.createdAt.getTime() - b.createdAt.getTime();
+        return (
+          (b.createdAt instanceof Date && !isNaN(b.createdAt.getTime()) ? b.createdAt.getTime() : 0) -
+          (a.createdAt instanceof Date && !isNaN(a.createdAt.getTime()) ? a.createdAt.getTime() : 0)
+        );
       case 'rarity':
         const rarityOrder: { [key: string]: number } = {
           'Legendary': 0,
