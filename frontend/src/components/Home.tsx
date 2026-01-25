@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { AppContextType } from '../App';
 import { Sparkles, TrendingUp } from 'lucide-react';
 import { NFTCard } from './NFTCard';
@@ -20,7 +20,37 @@ export function Home({ context, onNavigate }: HomeProps) {
   );
 
   const featuredCollections = context.collections.slice(0, 3);
-  const topNFTs = context.nfts.filter(nft => nft.status === 'listed' || nft.status === 'auction').slice(0, 6);
+  
+  // Calculate top NFTs: listed NFTs + auction NFTs sorted by highest price/bid
+  const topNFTs = (() => {
+    // Get all listed NFTs
+    const listedNFTs = context.nfts.filter(nft => nft.status === 'listed' && nft.price);
+    
+    // Get all auction NFTs with their current bid value (highestBid or minBid)
+    const auctionNFTs = context.nfts
+      .filter(nft => nft.status === 'auction')
+      .map(nft => ({
+        ...nft,
+        // Use highestBid if available, otherwise use minBid, default to 0
+        currentValue: nft.highestBid ?? nft.minBid ?? 0
+      }));
+    
+    // Combine listed and auction NFTs
+    const allAvailableNFTs = [
+      ...listedNFTs.map(nft => ({
+        ...nft,
+        currentValue: nft.price ?? 0
+      })),
+      ...auctionNFTs
+    ];
+    
+    // Sort by currentValue (price for listed, bid for auction) in descending order
+    const sorted = allAvailableNFTs.sort((a, b) => b.currentValue - a.currentValue);
+    
+    // Return top 6
+    return sorted.slice(0, 6);
+  })();
+  
   const trendingNFTs = context.nfts.filter(nft => nft.status === 'auction').slice(0, 3);
 
   return (

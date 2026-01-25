@@ -7,6 +7,7 @@ import nftJson from "@/abi/nftAbi.json"
 import { ethers } from 'ethers';
 import "../styles/ProfilePage.css"
 import { getErrorMessage, isUserRejection } from '@/blockchain/utils/errorMessages';
+import { WithdrawConfirmationModal } from './WithdrawConfirmationModal';
 
 type ProfilePageProps = {
   context: AppContextType;
@@ -16,24 +17,13 @@ type Tab = 'owned' | 'history';
 
 export function ProfilePage({ context }: ProfilePageProps) {
   const [activeTab, setActiveTab] = useState<Tab>('owned');
-  const [isProcessing, setIsProcessing] = useState<Boolean>(false);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [isOwner, setIsOwner] = useState(false);
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [withdrawableAmount, setWithdrawableAmount] = useState<number>(0);
 
   const getNFTContract = (signerOrProvider: ethers.Signer | ethers.Provider) => {
     return new ethers.Contract(NFT_ADDRESS, nftJson.abi, signerOrProvider);
-  };
-
-  const checkOwnership = async () => {
-    if (!window.ethereum || !context.wallet) return false;
-
-    const provider = new ethers.BrowserProvider(window.ethereum);
-    const signer = await provider.getSigner(); // async here
-    const nftContract = getNFTContract(signer);
-
-    const contractOwner = await nftContract.owner(); // async call
-    const isOwner = context.wallet.toLowerCase() === contractOwner.toLowerCase();
-
-    return isOwner;
   };
 
   useEffect(() => {
@@ -51,9 +41,38 @@ export function ProfilePage({ context }: ProfilePageProps) {
       fetchOwnership();
     }, [context.wallet]);
 
-  const handleWithDraw = async () => {
+  const handleWithdrawClick = async () => {
     if (!context.wallet) {
       context.showAlert('Please connect your wallet first', 'error');
+      return;
+    }
+
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const nftContract = getNFTContract(provider);
+      
+      // Fetch the contract balance
+      const balance = await provider.getBalance(nftContract.target);
+      const withdrawableETH = Number(ethers.formatEther(balance));
+
+      if (withdrawableETH === 0) {
+        context.showAlert('No funds available to withdraw. The contract balance is zero.', 'error');
+        return;
+      }
+
+      // Show confirmation modal with the amount
+      setWithdrawableAmount(withdrawableETH);
+      setShowWithdrawModal(true);
+    } catch (err) {
+      console.error('Error fetching balance:', err);
+      context.showAlert(getErrorMessage(err), 'error');
+    }
+  };
+
+  const handleConfirmWithdraw = async () => {
+    if (!context.wallet) {
+      context.showAlert('Please connect your wallet first', 'error');
+      setShowWithdrawModal(false);
       return;
     }
 
@@ -65,27 +84,22 @@ export function ProfilePage({ context }: ProfilePageProps) {
 
     try {
       const owner: string = await nftContract.owner();
-      const balance = await provider.getBalance(nftContract.target);
-      const withdrawableETH = Number(ethers.formatEther(balance));
-
-      if(withdrawableETH == 0) {
-        throw new Error('No funds available to withdraw. The contract balance is zero.');
-      }
+      
       // Call the withdraw function on the contract
       const tx = await nftContract.withdraw(owner);
       await tx.wait();
 
+      setShowWithdrawModal(false);
       context.showAlert('Withdrawal successful!', 'success');
     } catch (err) {
       console.error('Error withdrawing funds:', err);
       if (!isUserRejection(err)) {
         context.showAlert(getErrorMessage(err), 'error');
       }
-      setIsProcessing(false);
     } finally {
       setIsProcessing(false);
     }
-  }
+  };
 
   if (!context.wallet) {
     return (
@@ -157,22 +171,11 @@ export function ProfilePage({ context }: ProfilePageProps) {
             
             {isOwner && (
               <button
-                onClick={handleWithDraw} 
+                onClick={handleWithdrawClick} 
                 disabled={isProcessing}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
-                  isProcessing
-                    ? 'bg-gray-600 cursor-not-allowed'
-                    : 'bg-[#00FFFF] text-black hover:bg-[#00DDDD] transition-colors font-medium'
-                }`}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all bg-[#00FFFF] text-black hover:bg-[#00DDDD] transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isProcessing ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
-                    {'WithDrawing...'}
-                  </span>
-                ) : (
-                  'WithDraw'
-                )}
+                WithDraw
               </button>
               )}
             </div>
@@ -332,6 +335,19 @@ export function ProfilePage({ context }: ProfilePageProps) {
           </div>
         )}
       </div>
+
+      {/* Withdraw Confirmation Modal */}
+      {showWithdrawModal && (
+        <WithdrawConfirmationModal
+          amount={withdrawableAmount}
+          onConfirm={handleConfirmWithdraw}
+          onCancel={() => {
+            setShowWithdrawModal(false);
+            setWithdrawableAmount(0);
+          }}
+          isProcessing={isProcessing}
+        />
+      )}
     </div>
   );
 }

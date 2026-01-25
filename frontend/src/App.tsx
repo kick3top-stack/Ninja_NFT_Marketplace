@@ -116,6 +116,8 @@ function App() {
     for (let tokenId = 0; tokenId < total; tokenId++) {
       const tokenURI = await nftContract.tokenURI(tokenId);
       const owner = await nftContract.ownerOf(tokenId);
+      // Fetch on-chain collection name from the contract
+      const onChainCollectionName = await nftContract.collections(tokenId);
       const metadata = await fetch(tokenURI).then(res => res.json());
 
       const listing = await marketplaceContract.getListing(
@@ -148,13 +150,16 @@ function App() {
           minBid = auction.minBid ? parseFloat(ethers.formatEther(auction.minBid)) : undefined;
       }
           
+      // Normalize collection name: convert to lowercase and replace spaces with hyphens for consistency
+      const normalizedCollection = onChainCollectionName.toLowerCase().replace(/\s+/g, '-');
+          
       fetchedNFTs.push({
         id: tokenId.toString(),
         name: metadata.name,
         description: metadata.description,
         image: metadata.image,
         price,
-        collection: metadata.collection,
+        collection: normalizedCollection, // Use on-chain collection name instead of metadata
         creator: metadata.creator,
         owner: owner,
         status: status,
@@ -169,7 +174,8 @@ function App() {
         description: metadata.description,
         image: metadata.image,
         price,
-        collection: metadata.collection,
+        collection: normalizedCollection,
+        onChainCollectionName,
         creator: metadata.creator,
         owner: owner,
         status: status,
@@ -194,39 +200,57 @@ function App() {
   useEffect(() => {
     if (nfts.length === 0) return;
 
+    // Map to store collection data: key is normalized collection ID, value is Collection object
     const collectionMap = new Map<string, Collection>();
+    // Map to store actual on-chain collection names: key is normalized ID, value is actual name
+    const collectionNamesMap = new Map<string, string>();
 
     for (const nft of nfts) {
+      // Only count NFTs that are listed or in auction (available for purchase)
+      const isAvailable = nft.status === 'listed' || nft.status === 'auction';
+      
+      // nft.collection is already normalized from fetchNFTs
       const key = nft.collection;
 
       if (!collectionMap.has(key)) {
+        // Try to get the actual collection name from the first NFT's metadata or use formatted key
+        // Since we're using normalized IDs, we'll format it for display
+        const displayName = key
+          .split('-')
+          .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+          .join(' ');
+        
         collectionMap.set(key, {
           id: key,
-          name: key
-            .split('-')
-            .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-            .join(' '),
-          description: `Collection of ${key} NFTs`,
+          name: displayName,
+          description: `Collection of ${displayName} NFTs`,
           image: nft.image,
           creator: nft.creator,
-          floorPrice: nft.price ?? Infinity,
-          nftCount: 1,
+          floorPrice: isAvailable && nft.price ? nft.price : Infinity,
+          nftCount: isAvailable ? 1 : 0,
         });
       } else {
         const col = collectionMap.get(key)!;
-        col.nftCount += 1;
+        
+        // Only increment count for listed/auction items
+        if (isAvailable) {
+          col.nftCount += 1;
+        }
 
-        if (nft.price && nft.price < col.floorPrice) {
+        // Update floor price only for available items with a price
+        if (isAvailable && nft.price && nft.price < col.floorPrice) {
           col.floorPrice = nft.price;
         }
       }
     }
 
-    // Replace Infinity with 0 for unlisted collections
-    const finalCollections = Array.from(collectionMap.values()).map(c => ({
-      ...c,
-      floorPrice: c.floorPrice === Infinity ? 0 : c.floorPrice,
-    }));
+    // Replace Infinity with 0 for unlisted collections and filter out collections with 0 items
+    const finalCollections = Array.from(collectionMap.values())
+      .map(c => ({
+        ...c,
+        floorPrice: c.floorPrice === Infinity ? 0 : c.floorPrice,
+      }))
+      .filter(c => c.nftCount > 0); // Only show collections with available items
 
     setCollections(finalCollections);
   }, [nfts]);
