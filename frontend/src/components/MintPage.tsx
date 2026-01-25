@@ -131,8 +131,9 @@ export function MintPage({ context }: MintPageProps) {
     const provider = new ethers.BrowserProvider(window.ethereum);
     const signer = await provider.getSigner();
     const contract = getNFTContract(signer);
+    const total = Number(await contract.tokenCounter());
 
-    const tx = await contract.mintNFT(metadataURL, newCollectionName, {
+    const tx = await contract.mintNFT(metadataURL, selectedCollection ? selectedCollection : newCollectionName, {
         value: ethers.parseEther("0.01"),
       });
 
@@ -141,7 +142,7 @@ export function MintPage({ context }: MintPageProps) {
 
     // Step 5: Add NFT to local state for immediate UI update
     const newNFT = {
-      id: Date.now().toString(),
+      id: total,
       name: nftName,
       description: nftDescription,
       image: imageURL,
