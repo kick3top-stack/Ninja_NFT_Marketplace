@@ -6,6 +6,7 @@ import { uploadToIPFS } from '@/blockchain/utils/ipfs';
 import { uploadJSONToIPFS } from '@/blockchain/utils/ipfs';
 import { getNFTContract } from '@/blockchain/contracts/nftContract';
 import { ethers } from 'ethers';
+import { getErrorMessage, isUserRejection } from '@/blockchain/utils/errorMessages';
 
 type MintPageProps = {
   context: AppContextType;
@@ -106,7 +107,9 @@ export function MintPage({ context }: MintPageProps) {
 
     // Step 2: Upload image to IPFS
     const imageURL = await uploadToIPFS(imageFile);
-    if (!imageURL) throw new Error('Image upload failed');
+    if (!imageURL) {
+      throw new Error('Failed to upload image to IPFS. Please check your internet connection and try again.');
+    }
 
     // Step 3: Create metadata and upload to IPFS
     const metadata = {
@@ -120,7 +123,9 @@ export function MintPage({ context }: MintPageProps) {
     };
 
     const metadataURL = await uploadJSONToIPFS(metadata);
-    if (!metadataURL) throw new Error('Metadata upload failed');
+    if (!metadataURL) {
+      throw new Error('Failed to upload metadata to IPFS. Please check your internet connection and try again.');
+    }
 
     // Step 4: Mint NFT on-chain
     const provider = new ethers.BrowserProvider(window.ethereum);
@@ -171,7 +176,9 @@ export function MintPage({ context }: MintPageProps) {
     setNewCollectionName('');
   } catch (err) {
     console.error(err);
-    context.showAlert('Minting failed. Please try again.', 'error');
+    if (!isUserRejection(err)) {
+      context.showAlert(getErrorMessage(err), 'error');
+    }
   } finally {
     setIsProcessing(false);
   }

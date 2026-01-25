@@ -13,6 +13,7 @@ import { NFT_ADDRESS } from './blockchain/contracts/addresses';
 import { MARKETPLACE_ADDRESS } from './blockchain/contracts/addresses';
 import nftJson from "@/abi/nftAbi.json"
 import marketplaceJson from "@/abi/marketplaceAbi.json"
+import { getErrorMessage, isUserRejection } from './blockchain/utils/errorMessages';
 
 export type NFT = {
   id: string;
@@ -245,7 +246,9 @@ function App() {
       showAlert('Wallet connected', 'success');
     } catch (err) {
       console.error('Wallet connection rejected', err);
-      showAlert('Error connecting to wallet.', 'error');
+      if (!isUserRejection(err)) {
+        showAlert(getErrorMessage(err), 'error');
+      }
     }
   };
 

@@ -6,6 +6,7 @@ import { NFT_ADDRESS } from '@/blockchain/contracts/addresses';
 import nftJson from "@/abi/nftAbi.json"
 import { ethers } from 'ethers';
 import "../styles/ProfilePage.css"
+import { getErrorMessage, isUserRejection } from '@/blockchain/utils/errorMessages';
 
 type ProfilePageProps = {
   context: AppContextType;
@@ -68,7 +69,7 @@ export function ProfilePage({ context }: ProfilePageProps) {
       const withdrawableETH = Number(ethers.formatEther(balance));
 
       if(withdrawableETH == 0) {
-        throw new Error('No ETH available to withdraw');
+        throw new Error('No funds available to withdraw. The contract balance is zero.');
       }
       // Call the withdraw function on the contract
       const tx = await nftContract.withdraw(owner);
@@ -77,7 +78,9 @@ export function ProfilePage({ context }: ProfilePageProps) {
       context.showAlert('Withdrawal successful!', 'success');
     } catch (err) {
       console.error('Error withdrawing funds:', err);
-      context.showAlert('Error withdrawing funds', 'error');
+      if (!isUserRejection(err)) {
+        context.showAlert(getErrorMessage(err), 'error');
+      }
       setIsProcessing(false);
     } finally {
       setIsProcessing(false);
