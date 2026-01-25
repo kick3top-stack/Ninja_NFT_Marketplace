@@ -5,6 +5,7 @@ import { Wallet, LogOut, Package, History } from 'lucide-react';
 import { NFT_ADDRESS } from '@/blockchain/contracts/addresses';
 import nftJson from "@/abi/nftAbi.json"
 import { ethers } from 'ethers';
+import "../styles/ProfilePage.css"
 
 type ProfilePageProps = {
   context: AppContextType;
@@ -150,26 +151,27 @@ export function ProfilePage({ context }: ProfilePageProps) {
               <LogOut className="w-4 h-4" />
               Disconnect Wallet
             </button>
-              {isOwner && (
-                <button
-                  onClick={handleWithDraw}
-                  disabled={isProcessing}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
-                    isProcessing
-                      ? 'bg-gray-600 cursor-not-allowed'
-                      : 'bg-[#00FFFF] text-black hover:bg-[#00DDDD] transition-colors font-medium'
-                  }`}
-                >
-                  {isProcessing ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
-                      {'WithDrawing...'}
-                    </span>
-                  ) : (
-                    'WithDraw'
-                  )}
-                </button>
+            
+            {isOwner && (
+              <button
+                onClick={handleWithDraw} 
+                disabled={isProcessing}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
+                  isProcessing
+                    ? 'bg-gray-600 cursor-not-allowed'
+                    : 'bg-[#00FFFF] text-black hover:bg-[#00DDDD] transition-colors font-medium'
+                }`}
+              >
+                {isProcessing ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                    {'WithDrawing...'}
+                  </span>
+                ) : (
+                  'WithDraw'
                 )}
+              </button>
+              )}
             </div>
           </div>
         </div>
